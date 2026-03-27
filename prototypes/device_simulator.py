@@ -10,15 +10,15 @@ RSSI_THRESHOLD = -80
 TOTAL_READINGS = 10
 SLEEP_INTERVAL = 1  # seconds
 
-# Configure professional logging [cite: 209, 281]
+# Configure professional logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 def get_device_id() -> int:
-    """Generates a random unique identifier for a device[cite: 63]."""
+    """Generates a random unique identifier for a device."""
     return random.randint(1, 1000)
 
 def generate_reading(device_id: int) -> dict:
-    """Creates a single telemetry data point[cite: 38, 224]."""
+    """Creates a single telemetry data point"""
     rssi = random.randint(MIN_RSSI, MAX_RSSI)
     
     return {
@@ -29,7 +29,7 @@ def generate_reading(device_id: int) -> dict:
     }
 
 def simulate_device_readings(device_id: int) -> None:
-    """Orchestrates the simulation loop[cite: 198, 223]."""
+    """Orchestrates the simulation loop."""
     logging.info(f"Starting Simulation for Device ID: {device_id}")
     
     try:
