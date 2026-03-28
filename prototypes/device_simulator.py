@@ -73,12 +73,12 @@ def simulate_device_readings(device_id: int) -> None:
     """Orchestrates the simulation loop."""
     logging.info(f"Starting Simulation for Device ID: {device_id}")
 
-    ## Use the following lines to set random initial values.
+    ## Use the following lines to set random initial values, if so uncomment lines from 77 to 79 and comment lines from 81 to 83 and lines 28 to 30.
     #rssi = random.randint(MIN_RSSI, MAX_RSSI)
     #latency = random.randint(MIN_LATENCY_RANGE, MAX_LATENCY_RANGE)
     #battery_level = round(random.uniform(MIN_BATTERY_LEVEL, MAX_BATTERY_LEVEL), 2)
 
-    ## Use the following lines to set fixed initial values.
+    ## Use the following lines to set fixed initial values, if so uncomment lines from 81 to 83 and comment lines from 77 to 79 and make sure to set the INITIAL_RSSI, INITIAL_LATENCY and INITIAL_BATTERY_LEVEL constants to the desired values
     rssi = INITIAL_RSSI
     latency = INITIAL_LATENCY
     battery_level = INITIAL_BATTERY_LEVEL  
