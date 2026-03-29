@@ -52,3 +52,19 @@
 3. **99.9% Fault Tolerance**: The system must handle simulated device failures (offline status) without crashing the backend workers.
 4. **Documentation Coverage**: Every major architectural decision is backed by an ADR (like this one) and a fully documented API (Swagger/OpenAPI).
 5. **Deployment Automation**: A "One-Click" deployment process where GitHub Actions automatically builds, tests, and deploys the system to AWS.
+
+## ADR 005: Transition from Procedural to Object-Oriented Programming (OOP)
+**Date: 2026-03-28**
+**Status: Decided**
+**Context**: Initial simulation prototypes utilized a procedural approach, mostly to get used to Python programming. While sufficient for basic scripts, managing multiple stateful metrics (RSSI, battery, latency) across independent functions led to variable shadowing, global scope conflicts, and reduced observability.
+
+**Decision**: Migrate the simulator core logic to a Class-based (OOP) structure.
+**Rationale**:
+1. **Encapsulation & State Management**: Centralizes hardware metrics within NetworkDevice instances, treating the software as a "Digital Twin" of real telecommunications hardware.
+2. **Data Integrity (Guarded Attributes)**: Utilizing @property decorators and setters allows for automated validation, ensuring metrics like RSSI and battery remain within physically realistic bounds.
+3. **Scalability for Phase 2 & 5**: A modular class structure is a prerequisite for introducing asynchronous processing (FastAPI/Asyncio) and event-driven workers later in the roadmap.
+4. **Reduction of Technical Debt**: Eliminates the "Complexity Wall" of procedural code, making the system easier to debug and test as the number of simulated devices grows.
+
+**Lessons Learned**:
+1.**Type Safety**: Implementing strict Python typing (typing) during the refactor served as internal documentation and caught multiple logic-leak errors before execution.
+2. **Debugging Observability**: I noticed that centralizing state within an object significantly improved the efficiency of using the debugger, as the entire health of a device can be inspected in a single memory reference rather than tracking disparate variables.
