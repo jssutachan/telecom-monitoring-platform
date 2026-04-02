@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, InitVar
 from typing import ClassVar
 
 class InvalidDeviceConfigError(Exception):
@@ -22,45 +22,103 @@ class Device:
     APPROVED_CARDINALS: ClassVar[set] = {"NORTH", "SOUTH", "EAST", "WEST", "NORTHEAST", "NORTHWEST", "SOUTHEAST", "SOUTHWEST"}
     APPROVED_DEVICES: ClassVar[set] = {"AIRFIBER5XHD"}
 
-    name: str #Format [Cardinal]-[Region]-[Type]-[ID]
-    cardinal: str = field(init=False)
-    region: str = field(init=False)
-    device_id: uuid.UUID = field(default_factory=uuid.uuid4)
+    name: InitVar[str] #Format [Cardinal]-[Region]-[Type]-[ID]
+    _name: str = field(init=False)
+    _device_id: uuid.UUID = field(default_factory=uuid.uuid4)
+    _last_updated: datetime = field(default_factory=datetime.now)
+
+    _cardinal: str = field(init=False)
+    _region: str = field(init=False)
     _status: str = "INIT"
-    last_updated: datetime = field(default_factory=datetime.now)
-    number_of_devices: ClassVar[int]= 0
-    parts: list = field(init=False)
 
-    def __post_init__(self):
-        self.parts = self.name.split("-")
-        self._validate_object_creation()
-        Device.number_of_devices += 1
+    _parts: list = field(init=False)
 
-    def _validate_object_creation(self):
+    _number_of_devices: ClassVar[int]= 0
+    _name_registry: ClassVar[set] = set() # To track unique device names
+
+    def __post_init__(self, name: str):
+        self._name = name.upper()
+        self._parts = self._name.split("-")
+        cardinal = self._parts[0]
+        region = self._parts[1]
+
         self._validate_name_format()
-        self._validate_region_and_cardinal()
+        self.cardinal = cardinal
+        self.region = region
         self._validate_device()
+        self._register_device()
+        Device._number_of_devices += 1
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def device_id(self) -> uuid.UUID:
+        return self._device_id
+    
+    @property
+    def last_updated(self) -> datetime:
+        return self._last_updated   
 
     def _validate_name_format(self):
-        if len(self.parts) != 4:
+        if len(self._parts) != 4:
             raise InvalidDeviceConfigError(f"Device name '{self.name}' must have exactly 4 parts separated by dashes (Cardinal-Region-Type-ID).")
 
-    def _validate_region_and_cardinal(self):
-        parsed_cardinal = self.parts[0].upper()
-        parsed_region = self.parts[1].upper()
+    @property
+    def cardinal(self) -> str:
+        return self._cardinal
+    
+    @cardinal.setter
+    def cardinal(self, cardinal: str):
+        if cardinal not in Device.APPROVED_CARDINALS:
+            raise InvalidDeviceConfigError(f"Cardinal '{cardinal}' is not in the approved list: {Device.APPROVED_CARDINALS}")
+        self._cardinal = cardinal
 
-        if parsed_cardinal not in Device.APPROVED_CARDINALS:
-            raise InvalidDeviceConfigError(f"Cardinal '{parsed_cardinal}' is not in the approved list: {Device.APPROVED_CARDINALS}")
-        
-        if parsed_region not in Device.APPROVED_REGIONS:
-            raise InvalidDeviceConfigError(f"Region '{parsed_region}' is not in the approved list: {Device.APPROVED_REGIONS}")
-        
-        self.cardinal = parsed_cardinal.upper()
-        self.region = parsed_region.upper()
+    @property
+    def region(self) -> str:
+        return self._region
+    
+    @region.setter
+    def region(self, region: str):
+        if region not in Device.APPROVED_REGIONS:
+            raise InvalidDeviceConfigError(f"Region '{region}' is not in the approved list: {Device.APPROVED_REGIONS}")
+        self._region = region
 
     def _validate_device(self):
-        if self.parts[2].upper() not in Device.APPROVED_DEVICES:
-            raise InvalidDeviceConfigError(f"Device type '{self.parts[2]}' is not in the approved list: {Device.APPROVED_DEVICES}")
+        """Checks if the hardware type is supported."""
+        device_type = self._parts[2]
+        if device_type not in Device.APPROVED_DEVICES:
+            raise InvalidDeviceConfigError(
+                f"Device type '{device_type}' is not supported. "
+                f"Allowed: {Device.APPROVED_DEVICES}"
+            )
+
+    def _register_device(self):
+        """Ensures uniqueness and updates regional counters."""
+        name = self._name
+        
+        if name in Device._name_registry:
+            raise InvalidDeviceConfigError(
+                f"Conflict: Device '{name}' already exists in the registry."
+            )
+        Device._name_registry.add(name)
+    
+    @property
+    def status(self) -> str:
+        return self._status
+    
+    @status.setter
+    def status(self, new_status: str):
+        valid_statuses = {"INIT", "ONLINE", "MAINTENANCE", "DEGRADED", "OFFLINE"}
+        if new_status.upper() not in valid_statuses:
+            raise InvalidDeviceStatusError(f"Status '{new_status}' is not valid. Must be one of: {valid_statuses}")
+        if self._status != new_status.upper():
+            print(f"Log: {self.name} changed from {self._status} to {new_status.upper()}")
+            self._status = new_status.upper()
+            self._last_updated = datetime.now()
+            print(self)
+        
 
     def __repr__(self):
         return f"{self.last_updated} Device({self.name}: Cardinal = {self.cardinal} | Region = {self.region} | Status = {self.status})"
@@ -99,9 +157,10 @@ class AirFiber5XHD(Device):
     battery: float = 26.5 #volts
     number_of_airfiber: ClassVar[int] = 0
 
-    def __post_init__(self):
+    def __post_init__(self, name: str):
         """Logic that runs right after the object is created."""
-        super().__post_init__()
+        super().__post_init__(name)
+        #Enter the check for repeated devices.
         AirFiber5XHD.number_of_airfiber += 1  
 
     def __repr__(self):
@@ -177,5 +236,6 @@ class AirFiber5XHD(Device):
    # @rssi.setter
     #    def rssi(self, new_value: float):
 
-d1= AirFiber5XHD(name="south-ctg-AIRFIBER5XHd-001")
+d1= Device(name="south-ctg-AIRFIBER5XHd-001")
 print(d1)
+d1.status = "ONLINE"
