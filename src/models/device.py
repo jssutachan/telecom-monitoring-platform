@@ -232,7 +232,7 @@ class AirFiber5XHD(Device):
     def __post_init__(self, name: str) -> None:
         """Logic that runs right after the object is created."""
         super().__post_init__(name)
-        max_throughput = self.capacity
+        self._max_throughput = self.capacity
         AirFiber5XHD._number_of_airfiber += 1  
         print(self)
 
@@ -323,10 +323,10 @@ class AirFiber5XHD(Device):
         self.rssi = rssi
         self.cinr = cinr
         self.voltage = voltage
-        self._calculate_battery_from_voltage(voltage)
+        self._calculate_battery_from_voltage()
+        self._calculate_latency()
         self._calculate_capacity()
         self._calculate_throughput()
-        self._calculate_latency()
         self._update_status_based_on_performance()
 
     def finish_startup(self) -> None:
@@ -407,7 +407,7 @@ class AirFiber5XHD(Device):
                 self.cinr > AirFiber5XHD.CINR_THRESHOLD_DEGRADED and
                 self.voltage > AirFiber5XHD.LOW_VOLTAGE_THRESHOLD)
     
-    def _calculate_battery_from_voltage(self, voltage: float) -> None:
+    def _calculate_battery_from_voltage(self) -> None:
         """
         Simulate battery percentage based on voltage. This is a simplified model for demonstration purposes.
         """
