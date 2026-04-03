@@ -203,6 +203,19 @@ class AirFiber5XHD(Device):
     MAX_CAPACITY: ClassVar[float] = 1200.0 #mbps
     MIN_CAPACITY: ClassVar[float] = 0.0 #mbps
     MIN_THROUGHPUT: ClassVar[float] = 0.0 #mbps
+    PROTOCOL_EFFICIENCY = ClassVar[float] = 0.92 #Real-world airFiber links typically have ~8-10% overhead,
+
+    #Modulation thresholds
+    CINR_1024QAM_THRESHOLD: ClassVar[float] = 30.0
+    RSSI_1024QAM_THRESHOLD: ClassVar[float] = -60.0
+    CINR_256QAM_THRESHOLD: ClassVar[float] = 25.0
+    CINR_64QAM_THRESHOLD: ClassVar[float] = CINR_THRESHOLD_DEGRADED
+    CINR_16QAM_THRESHOLD: ClassVar[float] = 15.0
+    CINR_QPSK_THRESHOLD: ClassVar[float] = 10.0
+    RSSI_QPSK_THRESHOLD: ClassVar[float] = RSSI_THRESHOLD_DEGRADED
+
+    #Latency thresholds
+    BASE_LATENCY: float = 2.0 #ms
 
     #Voltage thresholds
     MAX_VOLTAGE_OPERATIONAL_LIMIT: ClassVar[float] = 27.2 #volts
@@ -220,10 +233,10 @@ class AirFiber5XHD(Device):
     # Instance attributes with default values
     _rssi: float = -55.0
     _cinr: float = 30.0
+    _voltage: float = 24.0 #volts
     _capacity: float = 600.0 #mbps
     _latency: int = 5 #ms
     _throughput: float = 550.0 #mbps
-    _voltage: float = 24.0 #volts
     _battery: float = 100.0 # %
     _number_of_airfiber: ClassVar[int] = 0
 
@@ -417,19 +430,45 @@ class AirFiber5XHD(Device):
         """
         Simulate capacity based on current performance metrics. This is a placeholder for more complex logic.
         """
-        pass
+        thresholds = {"MAX_CAPACITY": AirFiber5XHD.MAX_CAPACITY,
+                      "MIN_CAPACITY": AirFiber5XHD.MIN_CAPACITY,
+                      "CINR_1024QAM_THRESHOLD": AirFiber5XHD.CINR_1024QAM_THRESHOLD,
+                      "RSSI_1024QAM_THRESHOLD": AirFiber5XHD.RSSI_1024QAM_THRESHOLD,
+                      "CINR_256QAM_THRESHOLD": AirFiber5XHD.CINR_256QAM_THRESHOLD,
+                      "CINR_64AM_THRESHOLD": AirFiber5XHD.CINR_64QAM_THRESHOLD,
+                      "CINR_16QAM_THRESHOLD": AirFiber5XHD.CINR_16QAM_THRESHOLD,
+                      "CINR_QPSK_THRESHOLD": AirFiber5XHD.CINR_QPSK_THRESHOLD,
+                      "RSSI_QPSK_THRESHOLD": AirFiber5XHD.RSSI_QPSK_THRESHOLD,
+                      "LOW_VOLTAGE_THRESHOLD": AirFiber5XHD.LOW_VOLTAGE_THRESHOLD,
+                      "DEGRADED_OPERATION_VOLTAGE_THRESHOLD": AirFiber5XHD.DEGRADED_OPERATION_VOLTAGE_THRESHOLD}
+        
+        self.capacity = calculate_airfiber_capacity_dynamics(rssi = self.rssi, cinr =  self.cinr, voltage = self.voltage, thresholds = thresholds)
 
     def _calculate_throughput(self) -> None:
         """
         Simulate throughput based on capacity and current conditions. This is a placeholder for more complex logic.
         """
-        pass
+        thresholds = {"PROTOCOL_EFFICIENCY": AirFiber5XHD.PROTOCOL_EFFICIENCY,
+                      "MIN_THROUGHPUT": AirFiber5XHD.MIN_THROUGHPUT,
+                      "RSSI_THRESHOLD_DEGRADED": AirFiber5XHD.RSSI_THRESHOLD_DEGRADED,
+                      "MIN_RSSI": AirFiber5XHD.MIN_RSSI,
+                      "CINR_THRESHOLD_DEGRADED": AirFiber5XHD.CINR_THRESHOLD_DEGRADED,
+                      "MIN_CINR": AirFiber5XHD.MIN_CINR,
+                      "DEGRADED_OPERATION_VOLTAGE_THRESHOLD": AirFiber5XHD.DEGRADED_OPERATION_VOLTAGE_THRESHOLD,
+                      "MIN_VOLTAGE_OPERATIONAL_LIMIT": AirFiber5XHD.MIN_VOLTAGE_OPERATIONAL_LIMIT}
+        
+        self.throughput = calculate_airfiber_throughput_dynamics(rssi = self.rssi, cinr = self.cinr, voltage = self.voltage, capacity = self.capacity, thresholds = thresholds)
 
     def _calculate_latency(self) -> None:
         """
         Simulate latency based on current conditions. This is a placeholder for more complex logic.
         """
-        pass
+        thresholds = {"BASE_LATENCY": AirFiber5XHD.BASE_LATENCY,
+                      "RSSI_THRESHOLD_DEGRADED": AirFiber5XHD.RSSI_THRESHOLD_DEGRADED,
+                      "CINR_THRESHOLD_DEGRADED": AirFiber5XHD.CINR_THRESHOLD_DEGRADED,
+                      "LOW_VOLTAGE_THRESHOLD": AirFiber5XHD.LOW_VOLTAGE_THRESHOLD}
+        
+        self.latency = calculate_airfiber_latency_dynamics(rssi = self.rssi, cinr = self.cinr, voltage = self.voltage, thresholds = thresholds)
 
     # Special methods 
     def __repr__(self) -> str:
