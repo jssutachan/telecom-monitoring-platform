@@ -1,4 +1,5 @@
 import uuid
+import time
 from datetime import datetime
 from dataclasses import dataclass, field, InitVar
 from typing import ClassVar
@@ -88,6 +89,8 @@ class Device:
         return self._is_initializing
     @is_initializing.setter
     def is_initializing(self, value: bool) -> None:
+        if not isinstance(value, bool):
+            raise ValueError(f"is_initializing must be a boolean value, got {type(value)}")
         self._is_initializing = value
 
     @property
@@ -164,20 +167,21 @@ class Device:
     def __repr__(self) -> str:
         return f"{self.last_updated} Device({self.name}: Cardinal = {self.cardinal} | Region = {self.region} | Status = {self.status})"
 
-    def finish_startup(self) -> None:
+    def finish_startup(self, new_status: str) -> None:
         """Call this method to mark the device as finished initializing."""
         self.is_initializing = False
-        status = input("Enter new status: ")
-        self.status = status
+        self.status = new_status
 
-    def set_maintenance_mode(self, enabled: bool):
-        """Technician overrida. Higher priority than any sensor data"""
+    def set_maintenance_mode(self, enabled: bool, post_maintenance_status: str = None):
+        """Technician override. Higher priority than any sensor data"""
         self.in_maintenance = enabled
         if enabled:
             self.status = "MAINTENANCE"
         else:
-            status = input("Enter new status: ")
-            self.status = status
+            if post_maintenance_status:
+                self.status = post_maintenance_status
+            else:
+                raise ValueError("post_maintenance_status must be provided when disabling maintenance mode.")
 
 @dataclass
 class AirFiber5XHD(Device):
@@ -201,18 +205,17 @@ class AirFiber5XHD(Device):
     MIN_THROUGHPUT: ClassVar[float] = 0.0 #mbps
 
     #Voltage thresholds
-    MAX_VOLTAGE_LIMIT: ClassVar[float] = 54.0 #volts
-    NOMINAL_VOLTAGE: ClassVar[float] = 24.0 #volts
-    MIN_VOLTAGE_OPERATIONAL: ClassVar[float] = 19.0 #volts
-    CRITICAL_VOLTAGE_OFFLINE: ClassVar[float] = 18.5 #volts
+    MAX_VOLTAGE_OPERATIONAL_LIMIT: ClassVar[float] = 27.2 #volts
+    LOW_VOLTAGE_THRESHOLD: ClassVar[float] = 23.5 #volts
+    DEGRADED_OPERATION_VOLTAGE_THRESHOLD: ClassVar[float] = 21.5 #volts
+    MIN_VOLTAGE_OPERATIONAL_LIMIT: ClassVar[float] = 21.0 #volts
+    MIN_VOLTAGE_LIMIT: ClassVar[float] = 0.0 #volts
 
     #Battery thresholds
-    BATT_FULL_VOLTAGE: ClassVar[float] = 27.2 #volts
-    BATT_LOW_VOLTAGE: ClassVar[float] = 23.5 #volts
-    BATT_CRITICAL_VOLTAGE: ClassVar[float] = 21.5 #volts
-    BATT_EMPTY_VOLTAGE: ClassVar[float] = 21.0 #volts
-    MIN_BATTERY: ClassVar[float] = 0.0 # %
     MAX_BATTERY: ClassVar[float] = 100.0 # %
+    ACRIVE_DISCHARGE_BATTERY_THRESHOLD: ClassVar[float] = 70.0 # %
+    LOW_BATTERY_THRESHOLD: ClassVar[float] = 20.0 # %
+    MIN_BATTERY: ClassVar[float] = 0.0 # %
 
     # Instance attributes with default values
     _rssi: float = -55.0
@@ -231,6 +234,7 @@ class AirFiber5XHD(Device):
         super().__post_init__(name)
         max_throughput = self.capacity
         AirFiber5XHD._number_of_airfiber += 1  
+        print(self)
 
     # Properties and validation methods for AirFiber-specific attributes
 
@@ -257,8 +261,8 @@ class AirFiber5XHD(Device):
         return self._voltage
     @voltage.setter
     def voltage(self, value: float) -> None:
-        if not (AirFiber5XHD.CRITICAL_VOLTAGE_OFFLINE <= value <= AirFiber5XHD.MAX_VOLTAGE_LIMIT):
-            raise InvalidDeviceBattery(f"Battery voltage {value} V is out of valid range ({AirFiber5XHD.CRITICAL_VOLTAGE_OFFLINE} to {AirFiber5XHD.MAX_VOLTAGE_LIMIT} V).")
+        if not (AirFiber5XHD.MIN_VOLTAGE_LIMIT <= value <= AirFiber5XHD.MAX_VOLTAGE_OPERATIONAL_LIMIT):
+            raise InvalidDeviceBattery(f"Battery voltage {value} V is out of valid range ({AirFiber5XHD.MIN_VOLTAGE_LIMIT} to {AirFiber5XHD.MAX_VOLTAGE_OPERATIONAL_LIMIT} V).")
         self._voltage = value
 
     @property  
@@ -297,82 +301,148 @@ class AirFiber5XHD(Device):
             raise ValueError(f"Latency {value} ms is out of valid range ({AirFiber5XHD.MIN_LATENCY} to {AirFiber5XHD.MAX_LATENCY} ms).")
         self._latency = value
 
-    # Private helper methods
+    @property
+    def status(self) -> str:
+        return self._status
+    @status.setter
+    def status(self, new_status: str) -> None:
+        valid_statuses = {"INIT", "ONLINE", "MAINTENANCE", "DEGRADED", "OFFLINE", "LOW BATTERY"}
+        if new_status.upper() not in valid_statuses:
+            raise InvalidDeviceStatusError(f"Status '{new_status}' is not valid. Must be one of: {valid_statuses}")
+        if self._status != new_status.upper():
+            print(f"Log: {self.name} changed from {self._status} to {new_status.upper()}")
+            self._status = new_status.upper()
+            self._last_updated = datetime.now()
+            print(self)
+        else:
+            print(self)
 
-    def update_metrics(self, rssi: float, cinr: float, battery: float) -> None:
+    #Public Action Methods
+
+    def update_metrics(self, rssi: float, cinr: float, voltage: float) -> None:
         self.rssi = rssi
         self.cinr = cinr
-        self.battery = battery
-        self.update_status_based_on_performance()
+        self.voltage = voltage
+        self._calculate_battery_from_voltage(voltage)
+        self._calculate_capacity()
+        self._calculate_throughput()
+        self._calculate_latency()
+        self._update_status_based_on_performance()
 
-    def update_status_based_on_performance(self) -> None:
-        if self.device_is_under_maintenance():
+    def finish_startup(self) -> None:
+        """Call this method to mark the device as finished initializing."""
+        if not self.is_initializing:
+            raise ValueError(f"{self.name} is already finished initializing.")
+        else:
+            self.is_initializing = False
+            self._update_status_based_on_performance()
+
+    def set_maintenance_mode(self, enabled: bool):
+        """Technician override. Higher priority than any sensor data"""
+        self.in_maintenance = enabled
+        if enabled:
             self.status = "MAINTENANCE"
-        elif self.device_is_offline():
+        else:
+            self._update_status_based_on_performance()
+
+    # Private helper methods
+
+    def _update_status_based_on_performance(self) -> None:
+        if self._device_is_under_maintenance():
+            self.status = "MAINTENANCE"
+        elif self._device_is_offline():
             self.status = "OFFLINE"
-        elif self.device_is_initializing():
+        elif self._device_is_initializing():
             self.status = "INIT"
-        elif self.device_is_low_battery():
-            self.status = "LOWBATTERY"
-        elif self.device_is_degraded():
+        elif self._device_is_low_battery():
+            self.status = "LOW BATTERY"
+        elif self._connection_is_degraded():
             self.status = "DEGRADED"
-        elif self.device_is_online():
+        elif self._device_is_online():
             self.status = "ONLINE"
 
-    def device_is_under_maintenance(self) -> bool:
-        if self.status == "MAINTENANCE" and self.is_in_maintenance():
-            return True
-        else:
-            return False
+    def _device_is_under_maintenance(self) -> bool:
+        return (self.status == "MAINTENANCE" and self._in_maintenance)
 
-    def device_is_offline(self) -> bool:
+    def _device_is_offline(self) -> bool:
         """
         Critical Failure: The link has dropped or hardware has shut down.
         Logic: RSSI below minimum OR CINR below minimum OR Voltage at critical cutoff.
         """
         return (self.rssi <= AirFiber5XHD.MIN_RSSI or
                 self.cinr <= AirFiber5XHD.MIN_CINR or
-                self.voltage <= AirFiber5XHD.CRITICAL_VOLTAGE_OFFLINE)
+                self.voltage <= AirFiber5XHD.MIN_VOLTAGE_OPERATIONAL_LIMIT)
     
-    def device_is_initializing(self) -> bool:
-        if self.status == "INIT":
-            return True
-        else:
-            return False
+    def _device_is_initializing(self) -> bool:
+        return (self.status == "INIT" and self.is_initializing)
     
-    def device_is_low_battery(self) -> bool:
+    def _device_is_low_battery(self) -> bool:
         """
-        Infrastructure Warning: Power level is between critical and operational.
-        Logic: Battery percentage between 6% and 10%.
+        Performance Alert: Device is running on low battery, which may lead to degraded performance or imminent shutdown.
+        Logic: Voltage is between 21.1 V and 23.5 V. Low power is the root of any upcoming signal drops.
         """
-        return AirFiber5XHD.CRITICAL_VOLTAGE_OFFLINE < self.voltage <=self.BARR_LOW_VOLTAGE
+        return AirFiber5XHD.DEGRADED_OPERATION_VOLTAGE_THRESHOLD < self.voltage <= AirFiber5XHD.LOW_VOLTAGE_THRESHOLD
         
-    def connection_is_degradedl(self) -> bool:
+    def _connection_is_degraded(self) -> bool:
         """
         Performance Alert: Link is functional but experiencing interference or fading.
         Logic: Any metric falls below the primary threshold but above the minimum.
         """
-        return (self.rssi_fail() or self.cinr_fail() or self.voltage_fail())
+        return (self._rssi_fail() or self._cinr_fail() or self._voltage_fail())
     
-    def rssi_fail(self) -> bool:
-        return self.MIN_RSSI < self.rssi <= self.RSSI_THRESHOLD_DEGRADED
+    def _rssi_fail(self) -> bool:
+        return AirFiber5XHD.MIN_RSSI < self.rssi <= AirFiber5XHD.RSSI_THRESHOLD_DEGRADED
     
-    def cinr_fail(self) -> bool:
-        return self.MIN_CINR < self.cinr <= self.CINR_THRESHOLD_DEGRADED
+    def _cinr_fail(self) -> bool:
+        return AirFiber5XHD.MIN_CINR < self.cinr <= AirFiber5XHD.CINR_THRESHOLD_DEGRADED
 
-    def voltage_fail(self) -> bool:
-        return self.BATT_LOW_VOLTAGE < self.voltage <= self.MIN_VOLTAGE_OPERATIONAL
+    def _voltage_fail(self) -> bool:
+        return AirFiber5XHD.MIN_VOLTAGE_OPERATIONAL_LIMIT < self.voltage <= AirFiber5XHD.DEGRADED_OPERATION_VOLTAGE_THRESHOLD
 
-    def device_is_online(self) -> bool:
+    def _device_is_online(self) -> bool:
         """
         Optimal State: All metrics exceed their degraded thresholds.
         """
         return (self.rssi > AirFiber5XHD.RSSI_THRESHOLD_DEGRADED and
                 self.cinr > AirFiber5XHD.CINR_THRESHOLD_DEGRADED and
-                self.voltage > AirFiber5XHD.BATT_LOW_VOLTAGE)
+                self.voltage > AirFiber5XHD.LOW_VOLTAGE_THRESHOLD)
     
+    def _calculate_battery_from_voltage(self, voltage: float) -> None:
+        """
+        Simulate battery percentage based on voltage. This is a simplified model for demonstration purposes.
+        """
+        pass
 
-    # Special methods override __repr__ to include AirFiber-specific details
+    def _calculate_capacity(self) -> None:
+        """
+        Simulate capacity based on current performance metrics. This is a placeholder for more complex logic.
+        """
+        pass
+
+    def _calculate_throughput(self) -> None:
+        """
+        Simulate throughput based on capacity and current conditions. This is a placeholder for more complex logic.
+        """
+        pass
+
+    def _calculate_latency(self) -> None:
+        """
+        Simulate latency based on current conditions. This is a placeholder for more complex logic.
+        """
+        pass
+
+    # Special methods 
     def __repr__(self) -> str:
-        return (f"{self.last_updated} AirFiber5XHD({self.name}: RSSI = {self.rssi} dBm | CINR = {self.cinr} dB | Battery = {self.battery} % | Status = {self.status} \n "
-                f"Capacity = {self.capacity} Mbps | Latency = {self.latency} ms | Throughput = {self.throughput} Mbps ")    
+        if self._device_is_under_maintenance():
+            return (f"{self.last_updated} AirFiber5XHD({self.name} is under maintenance)")
+        elif self._device_is_initializing():
+            return (f"{self.last_updated} AirFiber5XHD({self.name}: is initializing)")
+        else:
+            return (f"{self.last_updated} AirFiber5XHD({self.name}: RSSI = {self.rssi} dBm | CINR = {self.cinr} dB | Voltage = {self.voltage} V | Status = {self.status} \n "
+                    f"Capacity = {self.capacity} Mbps | Latency = {self.latency} ms | Throughput = {self.throughput} Mbps ")    
+
+d1 = AirFiber5XHD(name="NORTH-BOG-AIRFIBER5XHD-001")
+d1.finish_startup()
+d1.update_metrics(rssi=-80.0, cinr=15.0, voltage=22.0)
+d1.set_maintenance_mode(enabled=True)
+d1.set_maintenance_mode(enabled=False)  
